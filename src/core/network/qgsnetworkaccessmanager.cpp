@@ -334,10 +334,19 @@ QNetworkReply *QgsNetworkAccessManager::createRequest( QNetworkAccessManager::Op
   // copy request so we can modify it
   QNetworkRequest modifiedRequest( req );
 
+  constexpr QNetworkRequest::Attribute attrSuffix = static_cast< QNetworkRequest::Attribute >( QgsNetworkRequestParameters::AttributeUserAgentSuffix );
+  const QVariant userAgentCustomSuffix = modifiedRequest.attribute( attrSuffix );
+
   QString userAgent = settingsUserAgent->value();
   if ( !userAgent.isEmpty() )
     userAgent += ' ';
   userAgent += u"QGIS/%1/%2"_s.arg( Qgis::versionInt() ).arg( QSysInfo::prettyProductName() );
+
+  if ( !userAgentCustomSuffix.toString().isEmpty() )
+  {
+    userAgent.append( ' ' + userAgentCustomSuffix.toString() );
+  }
+
   modifiedRequest.setRawHeader( "User-Agent", userAgent.toLatin1() );
 
 #ifndef QT_NO_SSL
@@ -412,9 +421,17 @@ QNetworkReply *QgsNetworkAccessManager::createRequest( QNetworkAccessManager::Op
       // on the version in the cache
       if ( diskCache->hasInvalidMatchForRequest( modifiedRequest ) )
       {
-        // can't use the previously cached response for this request, so explicitly block that
-        modifiedRequest.setAttribute( QNetworkRequest::CacheLoadControlAttribute, QNetworkRequest::AlwaysNetwork );
-        modifiedRequest.setAttribute( QNetworkRequest::CacheSaveControlAttribute, false );
+        if ( modifiedRequest.attribute( QNetworkRequest::CacheSaveControlAttribute ).toBool() )
+        {
+          // evict the previous invalid response, so this response will be cached
+          diskCache->remove( modifiedRequest.url() );
+        }
+        else
+        {
+          // can't use the previously cached response for this request, so explicitly block that
+          modifiedRequest.setAttribute( QNetworkRequest::CacheLoadControlAttribute, QNetworkRequest::AlwaysNetwork );
+          modifiedRequest.setAttribute( QNetworkRequest::CacheSaveControlAttribute, false );
+        }
       }
     }
 
